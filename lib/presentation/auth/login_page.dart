@@ -3,9 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:untitled/presentation/auth/screens/forgot_password_page.dart';
-import '../role_admin/screens/dashboard_page.dart';
-
-
+import 'package:untitled/presentation/auth/screens/register_page.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -33,33 +31,108 @@ class _LoginPageState extends State<LoginPage> {
 
     setState(() => _isLoading = true);
 
-    const String apiUrl =
-        "https://0996d5c7-3e3c-42d5-a5e5-cf761a8beebc.mock.pstmn.io/login";
+    const String apiUrl = "http://10.0.2.2:8081/api/auth/login";
 
     try {
       final response = await http.post(
         Uri.parse(apiUrl),
         headers: {"Content-Type": "application/json"},
-        body: jsonEncode({"email": email, "password": password}),
+        body: jsonEncode({
+          "email": email.toLowerCase(),
+          "password": password
+        }),
       );
+
+      print("STATUS → ${response.statusCode}");
+      print("BODY → ${response.body}");
+      print("URL → $apiUrl");
 
       final data = jsonDecode(response.body);
 
-      if (response.statusCode == 200 && data["status"] == "success") {
+      if (response.statusCode == 200 && data["token"] != null) {
+        // COMMON: Save token, role, id
         SharedPreferences prefs = await SharedPreferences.getInstance();
-        await prefs.setString('user_email', email);
+        await prefs.clear();
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data["message"] ?? "Login successful")),
-        );
+        await prefs.setString('token', data["token"]);
+        await prefs.setString('role', data["role"]);
+        await prefs.setString('email', email);
+        await prefs.setInt('userId', data["id"]);
 
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const DashboardPage()),
-        );
+        String role = data["role"];
+
+// -----------------------------------
+// ROLE: ADMIN → Directly open dashboard
+// -----------------------------------
+        if (role == "ADMIN") {
+          print("ADMIN login → No owner/shop lookup needed.");
+          Navigator.pushReplacementNamed(context, "/dashboard");
+          return;
+        }
+
+// -----------------------------------
+// ROLE: BARBER → Directly open dashboard
+// (If barber-specific data later needed, add here)
+// -----------------------------------
+        if (role == "BARBER") {
+          print("BARBER login → No owner/shop lookup needed.");
+          Navigator.pushReplacementNamed(context, "/dashboard");
+          return;
+        }
+
+// -----------------------------------
+// ROLE: OWNER → Fetch owner + shops
+// -----------------------------------
+        if (role == "OWNER") {
+          print("OWNER login → fetching owner + shops...");
+
+          // Fetch owner
+          final ownerRes = await http.get(
+            Uri.parse("http://10.0.2.2:8082/api/owners/email/$email"),
+            headers: {"Authorization": "Bearer ${data['token']}"},
+          );
+
+          if (ownerRes.statusCode == 200 && ownerRes.body.isNotEmpty) {
+            final ownerData = jsonDecode(ownerRes.body);
+
+            await prefs.setInt('ownerId', ownerData["id"]);
+
+            // Fetch shops under owner
+            final shopsRes = await http.get(
+              Uri.parse("http://10.0.2.2:8082/api/owners/${ownerData["id"]}/shops"),
+              headers: {"Authorization": "Bearer ${data['token']}"},
+            );
+
+            if (shopsRes.statusCode == 200) {
+              final raw = jsonDecode(shopsRes.body);
+              dynamic shop;
+
+              if (raw is List && raw.isNotEmpty) {
+                shop = raw[0];
+              } else if (raw is Map) {
+                shop = raw;
+              }
+
+              if (shop != null) {
+                prefs.setInt("shopId", shop["id"]);
+                prefs.setString("salonName", shop["shopName"]);
+                print("Owner Shop Saved");
+              }
+            }
+          }
+
+          Navigator.pushReplacementNamed(context, "/dashboard");
+          return;
+        }
+
+       // -----------------------------------
+        // Fallback: Unknown role
+        // -----------------------------------
+        Navigator.pushReplacementNamed(context, "/dashboard");
+
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(data["message"] ?? "Login failed")),
+          SnackBar(content: Text(data["error"] ?? "Login failed")),
         );
       }
     } catch (e) {
@@ -77,40 +150,41 @@ class _LoginPageState extends State<LoginPage> {
       backgroundColor: Colors.white,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 24.0),
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               const SizedBox(height: 20),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-                "Welcome back",
-                style: TextStyle(
-                    fontSize: 26,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87),
+
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  "Welcome back",
+                  style: TextStyle(
+                      fontSize: 26,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black87),
+                ),
               ),
-          ),
+
               const SizedBox(height: 8),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-                "Sign in to your SalonSaathi owner dashboard.",
-                style: TextStyle(color: Colors.grey, fontSize: 14),
-                textAlign: TextAlign.center,
+
+              Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  "Sign in to your SalonSaathi owner dashboard.",
+                  style: TextStyle(color: Colors.grey, fontSize: 14),
+                ),
               ),
-          ),
+
               const SizedBox(height: 30),
 
-              // Logo
               Column(
                 children: [
                   Image.asset(
-                    'assets/images/logo.png', // place your logo in assets
+                    'assets/images/logo.png',
                     height: 90,
                   ),
-
                   const SizedBox(height: 8),
                   const Text(
                     "SalonSaathi",
@@ -125,7 +199,6 @@ class _LoginPageState extends State<LoginPage> {
 
               const SizedBox(height: 40),
 
-              // Email Field
               TextField(
                 controller: _emailController,
                 decoration: InputDecoration(
@@ -139,9 +212,9 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                 ),
               ),
+
               const SizedBox(height: 16),
 
-              // Password Field
               TextField(
                 controller: _passwordController,
                 obscureText: _obscurePassword,
@@ -150,12 +223,13 @@ class _LoginPageState extends State<LoginPage> {
                   prefixIcon: const Icon(Icons.lock_outline),
                   suffixIcon: IconButton(
                     icon: Icon(
-                        _obscurePassword
-                            ? Icons.visibility_off
-                            : Icons.visibility,
-                        color: Colors.grey),
+                      _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                      color: Colors.grey,
+                    ),
                     onPressed: () {
-                      setState(() => _obscurePassword = !_obscurePassword);
+                      setState(() {
+                        _obscurePassword = !_obscurePassword;
+                      });
                     },
                   ),
                   filled: true,
@@ -175,7 +249,8 @@ class _LoginPageState extends State<LoginPage> {
                   onPressed: () {
                     Navigator.push(
                       context,
-                      MaterialPageRoute(builder: (context) => const ForgotPasswordPage()),
+                      MaterialPageRoute(
+                          builder: (_) => const ForgotPasswordPage()),
                     );
                   },
                   child: const Text(
@@ -185,10 +260,8 @@ class _LoginPageState extends State<LoginPage> {
                 ),
               ),
 
-
               const SizedBox(height: 10),
 
-              // Login Button
               _isLoading
                   ? const CircularProgressIndicator()
                   : ElevatedButton(
@@ -208,7 +281,6 @@ class _LoginPageState extends State<LoginPage> {
 
               const SizedBox(height: 25),
 
-              // Divider with "or"
               Row(
                 children: const [
                   Expanded(child: Divider(thickness: 1)),
@@ -219,16 +291,14 @@ class _LoginPageState extends State<LoginPage> {
                   Expanded(child: Divider(thickness: 1)),
                 ],
               ),
+
               const SizedBox(height: 25),
 
-              // Google Login Button
               OutlinedButton.icon(
                 onPressed: () {},
                 icon: Image.asset('assets/icons/google.png', height: 20),
-                label: const Text(
-                  "Login In with Google",
-                  style: TextStyle(color: Colors.black87),
-                ),
+                label: const Text("Login In with Google",
+                    style: TextStyle(color: Colors.black87)),
                 style: OutlinedButton.styleFrom(
                   side: const BorderSide(color: Colors.grey),
                   minimumSize: const Size(double.infinity, 55),
@@ -236,6 +306,27 @@ class _LoginPageState extends State<LoginPage> {
                     borderRadius: BorderRadius.circular(10),
                   ),
                 ),
+              ),
+
+              const SizedBox(height: 20),
+
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text("Don't have an account?"),
+                  TextButton(
+                    onPressed: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const RegisterPage()),
+                      );
+                    },
+                    child: const Text(
+                      "Register",
+                      style: TextStyle(color: Color(0xFF363262)),
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

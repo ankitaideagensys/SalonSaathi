@@ -101,7 +101,7 @@ class _AppPreferencesPageState extends State<AppPreferencesPage> {
             value: value,
             onChanged: onChanged,
             activeColor: Colors.white,
-            activeTrackColor: const Color(0xFF322A59), // purple like screenshot
+            activeTrackColor: const Color(0xFF363062), // purple like screenshot
             inactiveThumbColor: Colors.white,
             inactiveTrackColor: Colors.grey.shade300,
           ),

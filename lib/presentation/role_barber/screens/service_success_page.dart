@@ -5,7 +5,20 @@ import '../../role_admin/screens/pick_shop_location_page.dart';
 import 'add_barbers_services_page.dart';
 
 class ServiceSuccessPage extends StatefulWidget {
-  const ServiceSuccessPage({super.key});
+  final String name;
+  final String service;
+  final String total;
+  final String duration;
+  final String image; // 🔥 added
+
+  const ServiceSuccessPage({
+    super.key,
+    required this.name,
+    required this.service,
+    required this.total,
+    required this.duration,
+    required this.image,   // 🔥 added
+  });
 
   @override
   State<ServiceSuccessPage> createState() => _ServiceSuccessPageState();
@@ -17,16 +30,14 @@ class _ServiceSuccessPageState extends State<ServiceSuccessPage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF8F8F8),
 
-      // ✅ Main Body
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              const Spacer(flex: 1),
+              const Spacer(),
 
-              // ✅ Success Icon
               const CircleAvatar(
                 radius: 45,
                 backgroundColor: Color(0xFF22C55E),
@@ -35,7 +46,6 @@ class _ServiceSuccessPageState extends State<ServiceSuccessPage> {
 
               const SizedBox(height: 24),
 
-              // ✅ Title
               const Text(
                 "Service Added\nSuccessfully!",
                 textAlign: TextAlign.center,
@@ -49,11 +59,10 @@ class _ServiceSuccessPageState extends State<ServiceSuccessPage> {
 
               const SizedBox(height: 8),
 
-              // ✅ Subtitle
-              const Text(
-                "Your service has been added for Aman.",
+              Text(
+                "Your service has been added for ${widget.name}.",
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: const TextStyle(
                   color: Colors.grey,
                   fontSize: 14,
                 ),
@@ -61,76 +70,45 @@ class _ServiceSuccessPageState extends State<ServiceSuccessPage> {
 
               const SizedBox(height: 40),
 
-              // ✅ Barber Details Card
+              // ---- Barber Card ----
               Container(
                 width: double.infinity,
                 padding: const EdgeInsets.all(18),
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFE0E0E0)),
+                  border: Border.all(color: Color(0xFFE0E0E0)),
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
-                      children: const [
+                      children: [
                         CircleAvatar(
                           radius: 22,
-                          backgroundImage:
-                          AssetImage("assets/images/barber1.png"),
+                          backgroundImage: NetworkImage(widget.image),
                         ),
-                        SizedBox(width: 10),
+                        const SizedBox(width: 10),
                         Text(
-                          "Aman",
-                          style: TextStyle(
+                          widget.name,
+                          style: const TextStyle(
                             fontWeight: FontWeight.w600,
                             fontSize: 16,
                           ),
                         ),
                       ],
                     ),
+
                     const SizedBox(height: 16),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: const [
-                        Text("Service",
-                            style: TextStyle(
-                                fontSize: 14, fontWeight: FontWeight.w500)),
-                        Text("Haircut",
-                            style: TextStyle(
-                                fontSize: 14, fontWeight: FontWeight.w500)),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: const [
-                        Text("Total",
-                            style: TextStyle(
-                                fontSize: 14, fontWeight: FontWeight.w500)),
-                        Text("Rs100",
-                            style: TextStyle(
-                                fontSize: 14, fontWeight: FontWeight.w500)),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: const [
-                        Text("Duration",
-                            style: TextStyle(
-                                fontSize: 14, fontWeight: FontWeight.w500)),
-                        Text("30 mins",
-                            style: TextStyle(
-                                fontSize: 14, fontWeight: FontWeight.w500)),
-                      ],
-                    ),
+
+                    _infoRow("Service", widget.service),
+                    _infoRow("Total", "Rs ${widget.total}"),
+                    _infoRow("Duration", widget.duration),
                   ],
                 ),
               ),
 
-              const Spacer(flex: 2),
+              const Spacer(),
 
               SizedBox(
                 width: double.infinity,
@@ -139,8 +117,7 @@ class _ServiceSuccessPageState extends State<ServiceSuccessPage> {
                   onPressed: () {
                     Navigator.pushReplacement(
                       context,
-                      MaterialPageRoute(
-                          builder: (context) => const OverviewPage()),
+                      MaterialPageRoute(builder: (_) => const OverviewPage()),
                     );
                   },
                   style: ElevatedButton.styleFrom(
@@ -148,7 +125,6 @@ class _ServiceSuccessPageState extends State<ServiceSuccessPage> {
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    elevation: 0,
                   ),
                   child: const Text(
                     "Finish & Continue",
@@ -167,7 +143,7 @@ class _ServiceSuccessPageState extends State<ServiceSuccessPage> {
         ),
       ),
 
-      // ✅ Bottom Navigation Bar (Static)
+      // ---- Bottom Navigation ----
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         currentIndex: 1,
@@ -179,28 +155,43 @@ class _ServiceSuccessPageState extends State<ServiceSuccessPage> {
           if (index == 0) {
             Navigator.pushReplacement(
               context,
-              MaterialPageRoute(builder: (context) => const DashboardPage()),
+              MaterialPageRoute(builder: (_) => const DashboardPage()),
             );
           } else if (index == 1) {
             Navigator.pushReplacement(
               context,
-              MaterialPageRoute(builder: (context) => const AddBarbersServicesPage()),
+              MaterialPageRoute(builder: (_) => const AddBarbersServicesPage()),
             );
           } else if (index == 2) {
             Navigator.pushReplacement(
               context,
-              MaterialPageRoute(builder: (context) => const PickShopLocationPage()),
+              MaterialPageRoute(builder: (_) => const PickShopLocationPage()),
             );
           }
         },
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home_rounded), label: ''),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.add_box_outlined), label: ''),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.location_on_rounded), label: ''),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.settings_outlined), label: ''),
+          BottomNavigationBarItem(icon: Icon(Icons.add_box_outlined), label: ''),
+          BottomNavigationBarItem(icon: Icon(Icons.location_on_rounded), label: ''),
+          BottomNavigationBarItem(icon: Icon(Icons.settings_outlined), label: ''),
+        ],
+      ),
+    );
+  }
+
+  // 🔹 Reusable info row
+  Widget _infoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(label,
+              style: const TextStyle(
+                  fontSize: 14, fontWeight: FontWeight.w500)),
+          Text(value,
+              style: const TextStyle(
+                  fontSize: 14, fontWeight: FontWeight.w500)),
         ],
       ),
     );

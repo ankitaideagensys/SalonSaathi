@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import '../login_page.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 class ResetPasswordPage extends StatefulWidget {
-  const ResetPasswordPage({super.key});
+  final String email;
+  const ResetPasswordPage({super.key, required this.email});
 
   @override
   State<ResetPasswordPage> createState() => _ResetPasswordPageState();
@@ -35,21 +38,42 @@ class _ResetPasswordPageState extends State<ResetPasswordPage> {
 
     setState(() => _isSubmitting = true);
 
-    // Simulate API delay
-    await Future.delayed(const Duration(seconds: 2));
+    const String apiUrl = "http://10.0.2.2:8081/api/auth/update-password";
 
-    setState(() => _isSubmitting = false);
+    try {
+      final response = await http.post(
+        Uri.parse(apiUrl),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          "email": widget.email,
+          "newPassword": newPassword,
+        }),
+      );
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Password reset successful!')),
-    );
+      final data = jsonDecode(response.body);
 
-    // TODO: Navigate to login page or dashboard after success
-    Navigator.pushAndRemoveUntil(
-      context,
-      MaterialPageRoute(builder: (context) => const LoginPage()),
-          (route) => false, // clears all previous routes
-    );
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data["message"] ?? "Password updated successfully")),
+        );
+
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (context) => const LoginPage()),
+              (route) => false,
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data["error"] ?? "Failed to update password")),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: $e")),
+      );
+    } finally {
+      setState(() => _isSubmitting = false);
+    }
   }
 
   @override

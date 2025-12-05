@@ -1,9 +1,52 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 
 import 'add_barber_page.dart';
 
-class ManageTeamPage extends StatelessWidget {
+class ManageTeamPage extends StatefulWidget {
   const ManageTeamPage({super.key});
+
+  @override
+  State<ManageTeamPage> createState() => _ManageTeamPageState();
+}
+
+class _ManageTeamPageState extends State<ManageTeamPage> {
+  bool isLoading = true;
+
+  List<dynamic> staffList = [];
+  String salonName = "";
+  String salonAddress = "";
+
+  @override
+  void initState() {
+    super.initState();
+    fetchTeamData();
+  }
+
+  Future<void> fetchTeamData() async {
+    final url = Uri.parse(
+      "https://8f4d00a1-35af-4fa5-83ab-e665e09b68c1.mock.pstmn.io/team",
+    );
+
+    try {
+      final response = await http.get(url);
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        setState(() {
+          staffList = data["team"]["staff"];
+          salonName = data["team"]["salonName"];
+          salonAddress = data["team"]["salonAddress"];
+          isLoading = false;
+        });
+      }
+    } catch (e) {
+      print("Error fetching /team API: $e");
+      setState(() => isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -11,7 +54,7 @@ class ManageTeamPage extends StatelessWidget {
       backgroundColor: const Color(0xFFF7F7F7),
 
       appBar: AppBar(
-        backgroundColor: Color(0xFFF7F7F7),
+        backgroundColor: const Color(0xFFF7F7F7),
         elevation: 0,
         centerTitle: true,
         title: const Text(
@@ -23,22 +66,19 @@ class ManageTeamPage extends StatelessWidget {
           ),
         ),
         leading: IconButton(
-          icon: const Icon(
-            Icons.arrow_back,
-            color: Colors.black,
-            size: 26,
-          ),
+          icon: const Icon(Icons.arrow_back, color: Colors.black, size: 26),
           onPressed: () => Navigator.pop(context),
         ),
       ),
 
-      body: Padding(
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Padding(
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-
-            // ---------------- STAFF TITLE ----------------
+            // STAFF TITLE
             const Text(
               "Salon Staff",
               style: TextStyle(
@@ -49,10 +89,11 @@ class ManageTeamPage extends StatelessWidget {
 
             const SizedBox(height: 10),
 
-            // ---------------- STAFF CARD ----------------
+            // STAFF CARD
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(vertical: 38, horizontal: 28),
+              padding: const EdgeInsets.symmetric(
+                  vertical: 38, horizontal: 28),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
@@ -68,34 +109,18 @@ class ManageTeamPage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // --- STAFF LIST WITH DELETE ICON ---
+                  ...List.generate(staffList.length, (index) {
+                    final member = staffList[index];
+                    return Column(
+                      children: [
+                        staffTile(member["name"], index),
+                        const SizedBox(height: 25),
+                      ],
+                    );
+                  }),
 
-                  staffTile("Salman"),
-                  const SizedBox(height: 25),
-
-                  staffTile("Aadil"),
-                  const SizedBox(height: 25),
-
-                  staffTile("Aman"),
-                  const SizedBox(height: 25),
-
-                  // ---------- Salon Details ----------
-                  const Text(
-                    "Salon Details",
-                    style: TextStyle(
-                      fontSize: 25,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-
-                  const SizedBox(height: 18),
-
-                  detailTile(Icons.person_outline, "Salon Name"),
-                  const SizedBox(height: 18),
-
-                  detailTile(Icons.location_on_outlined, "Address"),
-                  const SizedBox(height: 25),
-
-                  // ---------- ADD STAFF BUTTON ----------
+                  // ADD STAFF BUTTON
                   SizedBox(
                     width: 110,
                     height: 38,
@@ -114,7 +139,6 @@ class ManageTeamPage extends StatelessWidget {
                           ),
                         );
                       },
-
                       child: const Text(
                         "Add Staff",
                         style: TextStyle(color: Colors.white),
@@ -125,29 +149,6 @@ class ManageTeamPage extends StatelessWidget {
               ),
             ),
 
-            const SizedBox(height: 18),
-
-            // ---------------- SAVE BUTTON ----------------
-            Center(
-              child: SizedBox(
-                width: 130,
-                height: 40,
-                child: ElevatedButton(
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF363062),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                  onPressed: () {},
-                  child: const Text(
-                    "Save",
-                    style: TextStyle(fontSize: 16, color: Colors.white),
-                  ),
-                ),
-              ),
-            ),
-
             const SizedBox(height: 45),
           ],
         ),
@@ -155,64 +156,45 @@ class ManageTeamPage extends StatelessWidget {
     );
   }
 
-  // ---------------- STAFF TILE WIDGET ----------------
-  Widget staffTile(String name) {
+  // STAFF TILE WITH DELETE
+  Widget staffTile(String name, int index) {
     return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Container(
-          height: 42,
-          width: 42,
-          decoration: BoxDecoration(
-            color: Colors.grey.shade300,
-            shape: BoxShape.circle,
-          ),
-          child: const Icon(
-            Icons.person,
-            color: Colors.grey,
-            size: 22,
-          ),
+        Row(
+          children: [
+            Container(
+              height: 42,
+              width: 42,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade300,
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.person,
+                color: Colors.grey,
+                size: 22,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Text(
+              name,
+              style: const TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
         ),
 
-        const SizedBox(width: 12),
-
-        Text(
-          name,
-          style: const TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
-    );
-  }
-
-
-  // ---------------- DETAILS TILE WIDGET ----------------
-  Widget detailTile(IconData icon, String label) {
-    return Row(
-      children: [
-        Container(
-          height: 42,
-          width: 42,
-          decoration: BoxDecoration(
-            color: Colors.grey.shade300,
-            shape: BoxShape.circle,
-          ),
-          child: Icon(
-            icon,
-            size: 22,
-            color: Colors.grey.shade700,
-          ),
-        ),
-
-        const SizedBox(width: 12),
-
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 17,
-            fontWeight: FontWeight.w500,
-          ),
+        // DELETE ICON
+        IconButton(
+          icon: const Icon(Icons.delete, color: Colors.red),
+          onPressed: () {
+            setState(() {
+              staffList.removeAt(index);
+            });
+          },
         ),
       ],
     );

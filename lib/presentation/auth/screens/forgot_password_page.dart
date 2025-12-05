@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
-import 'otp_verification_page.dart'; // ✅ Make sure this import exists
+import 'otp_verification_page.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 class ForgotPasswordPage extends StatefulWidget {
   const ForgotPasswordPage({super.key});
@@ -24,23 +26,41 @@ class _ForgotPasswordPageState extends State<ForgotPasswordPage> {
 
     setState(() => _isSending = true);
 
-    // Mock network delay (simulating API call)
-    await Future.delayed(const Duration(seconds: 2));
+    const String apiUrl = "http://10.0.2.2:8081/api/auth/forgot-password";
 
-    setState(() => _isSending = false);
+    try {
+      final response = await http.post(
+        Uri.parse(apiUrl),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({"email": email}),
+      );
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('OTP sent to your email address!')),
-    );
+      final data = jsonDecode(response.body);
 
-    // ✅ Navigate to OTP Verification Page here
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) =>
-            OtpVerificationPage(email: _emailController.text.trim()),
-      ),
-    );
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data["message"] ?? "OTP sent")),
+        );
+
+        // Navigate to OTP page
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => OtpVerificationPage(email: email),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data["error"] ?? "Failed to send OTP")),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: $e")),
+      );
+    } finally {
+      setState(() => _isSending = false);
+    }
   }
 
   @override

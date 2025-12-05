@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:untitled/presentation/auth/screens/reset_password_page.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 
 class OtpVerificationPage extends StatefulWidget {
   final String email; // optional: pass email from previous screen
@@ -74,7 +76,6 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
 
   String get _otp =>
       _controllers.map((c) => c.text.trim()).join();
-
   Future<void> _verify() async {
     if (_otp.length != _otpLength || _otp.contains(RegExp(r'[^0-9]'))) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -82,23 +83,48 @@ class _OtpVerificationPageState extends State<OtpVerificationPage> {
       );
       return;
     }
+
     setState(() => _verifying = true);
 
-    // TODO: call your verify API here
-    await Future.delayed(const Duration(seconds: 2));
+    const String apiUrl = "http://10.0.2.2:8081/api/auth/verify-otp";
 
-    setState(() => _verifying = false);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Verified: $_otp')),
-    );
+    try {
+      final response = await http.post(
+        Uri.parse(apiUrl),
+        headers: {"Content-Type": "application/json"},
+        body: jsonEncode({
+          "email": widget.email,
+          "otp": _otp,
+        }),
+      );
 
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => const ResetPasswordPage()),
-    );
+      final data = jsonDecode(response.body);
 
-    // TODO: Navigate to next screen (reset password / dashboard)
+      if (response.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data["message"] ?? "OTP verified")),
+        );
+
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => ResetPasswordPage(email: widget.email),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(data["error"] ?? "Invalid OTP")),
+        );
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Error: $e")),
+      );
+    } finally {
+      setState(() => _verifying = false);
+    }
   }
+
 
   void _resend() {
     if (_secondsLeft == 0) {

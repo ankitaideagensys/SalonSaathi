@@ -1,6 +1,12 @@
 import 'dart:io';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:provider/provider.dart';
+
+import '../../../core/constants/theme/theme_provider.dart';
 
 class EditSalonProfilePage extends StatefulWidget {
   const EditSalonProfilePage({super.key});
@@ -13,166 +19,301 @@ class _EditSalonProfilePageState extends State<EditSalonProfilePage> {
   File? _selectedImage;
   final ImagePicker _picker = ImagePicker();
 
-  Future<void> _pickImage() async {
-    final XFile? photo =
-    await _picker.pickImage(source: ImageSource.gallery, imageQuality: 70);
+  bool isLoading = true;
 
-    if (photo != null) {
-      setState(() {
-        _selectedImage = File(photo.path);
-      });
+  final TextEditingController fullNameController = TextEditingController();
+  final TextEditingController phoneController = TextEditingController();
+  final TextEditingController emailController = TextEditingController();
+
+  final TextEditingController salonNameController = TextEditingController();
+  final TextEditingController salonAddressController = TextEditingController();
+  final TextEditingController cityStateController = TextEditingController();
+
+  String? backendPhotoUrl;
+
+  // -------------------------------------------------
+  // FETCH OWNER + SHOP DETAILS
+  // -------------------------------------------------
+  Future<void> fetchProfileFromAPI() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      final token = prefs.getString("token");
+      final ownerId = prefs.getInt("ownerId");
+      final shopId = prefs.getInt("shopId");
+      final userId = prefs.getInt("userId");
+
+      if (token == null || ownerId == null) return;
+
+      final headers = {
+        "Authorization": "Bearer $token",
+        "Content-Type": "application/json",
+      };
+
+      final ownerRes = await http.get(
+        Uri.parse("http://10.0.2.2:8082/api/owners/$ownerId"),
+        headers: headers,
+      );
+
+      final shopsRes = await http.get(
+        Uri.parse("http://10.0.2.2:8082/api/owners/$ownerId/shops"),
+        headers: headers,
+      );
+
+      final userRes = await http.get(
+        Uri.parse("http://10.0.2.2:8082/api/users/$userId"),
+        headers: headers,
+      );
+
+      if (ownerRes.statusCode == 200 &&
+          shopsRes.statusCode == 200 &&
+          userRes.statusCode == 200) {
+        final owner = jsonDecode(ownerRes.body);
+        final shops = jsonDecode(shopsRes.body);
+        final user = jsonDecode(userRes.body);
+
+        final shop = shops[0];
+
+        setState(() {
+          isLoading = false;
+
+          fullNameController.text = owner["name"] ?? "";
+          phoneController.text = owner["phone"] ?? "";
+          emailController.text = owner["email"] ?? "";
+
+          salonNameController.text = shop["shopName"] ?? "";
+          salonAddressController.text = shop["address"] ?? "";
+          cityStateController.text = shop["state"] ?? "";
+
+          backendPhotoUrl = user["profileImageUrl"];
+        });
+      }
+    } catch (e) {
+      print("fetchProfile Error: $e");
     }
   }
 
   @override
+  void initState() {
+    super.initState();
+    fetchProfileFromAPI();
+  }
+
+  // -------------------------------------------------
+  // UPLOAD PHOTO
+  // -------------------------------------------------
+  Future<void> uploadProfileImage() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('token');
+    final userId = prefs.getInt('userId');
+
+    if (_selectedImage == null || token == null || userId == null) return;
+
+    final uri = Uri.parse("http://10.0.2.2:8082/api/users/$userId/upload-photo");
+
+    final request = http.MultipartRequest("POST", uri);
+    request.headers['Authorization'] = 'Bearer $token';
+
+    request.files.add(
+      await http.MultipartFile.fromPath('file', _selectedImage!.path),
+    );
+
+    final streamedResponse = await request.send();
+    final response = await streamedResponse.stream.bytesToString();
+
+    if (streamedResponse.statusCode == 200) {
+      final json = jsonDecode(response);
+      setState(() => backendPhotoUrl = json["profileImageUrl"]);
+    }
+  }
+
+  // -------------------------------------------------
+  // SAVE PROFILE
+  // -------------------------------------------------
+  Future<void> saveProfile() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    final token = prefs.getString("token");
+    final ownerId = prefs.getInt("ownerId");
+    final shopId = prefs.getInt("shopId");
+
+    if (token == null || ownerId == null || shopId == null) return;
+
+    final headers = {
+      "Authorization": "Bearer $token",
+      "Content-Type": "application/json",
+    };
+
+    final ownerBody = jsonEncode({
+      "name": fullNameController.text,
+      "phone": phoneController.text,
+      "email": emailController.text,
+    });
+
+    final shopBody = jsonEncode({
+      "shopName": salonNameController.text,
+      "address": salonAddressController.text,
+      "state": cityStateController.text,
+      "contactNumber": phoneController.text,
+    });
+
+    try {
+      await http.put(
+        Uri.parse("http://10.0.2.2:8082/api/owners/$ownerId"),
+        headers: headers,
+        body: ownerBody,
+      );
+
+      await http.put(
+        Uri.parse("http://10.0.2.2:8082/api/shops/$shopId"),
+        headers: headers,
+        body: shopBody,
+      );
+
+      if (_selectedImage != null) {
+        await uploadProfileImage();
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Profile updated successfully!")),
+      );
+
+      Navigator.pop(context);
+
+    } catch (e) {
+      print("saveProfile Error: $e");
+    }
+  }
+
+  // -------------------------------------------------
+  // UI
+  // -------------------------------------------------
+  @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final textColor = theme.textTheme.bodyMedium!.color;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF7F7F7),
+      backgroundColor: theme.scaffoldBackgroundColor,
+
       appBar: AppBar(
-        backgroundColor: const Color(0xfff7f7f7),  // ✔ perfect grey app bar
-        elevation: 0,                              // ✔ removes shadow
+        backgroundColor: theme.scaffoldBackgroundColor,
+        elevation: 0,
         surfaceTintColor: Colors.transparent,
         toolbarHeight: 30,
         leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: Colors.black),
+          icon: Icon(Icons.arrow_back_ios, color: textColor),
           onPressed: () => Navigator.pop(context),
         ),
-        title: const SizedBox(),  // <-- removed title
-        centerTitle: true,
       ),
 
-              body: Padding(
-                padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),   // reduce top padding
-                child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 0),
+      body: isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 0),
 
+            // ---------------- PROFILE PHOTO ----------------
             Center(
               child: GestureDetector(
-                onTap: _pickImage,
-               child: Column(
-                children: [
-                  Container(
-                    height: 90,
-                    width: 90,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE7E7E7), // light grey just like original
-                      shape: BoxShape.circle,
-                    ),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(60),
-                      child: _selectedImage == null
-                          ? Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Container(
-                            height: 30,
-                            width: 30,
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade600,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Icon(
-                              Icons.add_photo_alternate_outlined,
-                              size: 26,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ],
-                      )
-                          : Image.file(
-                        _selectedImage!,
-                        fit: BoxFit.cover,
+                onTap: () async {
+                  final XFile? photo = await _picker.pickImage(
+                    source: ImageSource.gallery,
+                    imageQuality: 70,
+                  );
+                  if (photo != null) {
+                    setState(() => _selectedImage = File(photo.path));
+                  }
+                },
+                child: Column(
+                  children: [
+                    Container(
+                      height: 90,
+                      width: 90,
+                      decoration: BoxDecoration(
+                        color: theme.cardColor,
+                        shape: BoxShape.circle,
+                      ),
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(60),
+                        child: _selectedImage != null
+                            ? Image.file(_selectedImage!,
+                            fit: BoxFit.cover)
+                            : backendPhotoUrl != null
+                            ? Image.network(
+                          "http://10.0.2.2:8082$backendPhotoUrl",
+                          fit: BoxFit.cover,
+                        )
+                            : Icon(
+                          Icons.person,
+                          size: 60,
+                          color: textColor,
+                        ),
                       ),
                     ),
-                  ),
-
-                  const SizedBox(height: 8),
-
-                  Text(
-                    "Upload Photo",
-                    style: TextStyle(
-                      fontSize: 14,
-                      color: Colors.grey.shade700,
+                    const SizedBox(height: 8),
+                    Text(
+                      "Upload Photo",
+                      style: TextStyle(fontSize: 14, color: textColor),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
             ),
 
             const SizedBox(height: 15),
 
-            // Owner Information Title
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                "Owner Information",
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+            Text(
+              "Owner Information",
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: textColor,
               ),
             ),
 
             const SizedBox(height: 8),
 
-            _infoCard(
-              title1: "Full Name",
-              value1: "Salman",
-              title2: "Phone Number",
-              value2: "+91 1234567890",
-              title3: "Email Address",
-              value3: "alex.johnson@gmail.com",
-            ),
+            _infoCard(theme),
 
             const SizedBox(height: 18),
 
-            // Salon Information Title
-            const Align(
-              alignment: Alignment.centerLeft,
-              child: Text(
-                "Salon Information",
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+            Text(
+              "Salon Information",
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: textColor,
               ),
             ),
 
             const SizedBox(height: 8),
 
-            _infoCard(
-              title1: "Salon Name",
-              value1: "Hema Salon",
-              title2: "Salon Address",
-              value2: "123 Main ST",
-              title3: "City, State, Country",
-              value3: "Anytown, CA, 1235",
-            ),
+            _infoCard2(theme),
 
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
 
-            // Save Button
             Center(
               child: SizedBox(
                 width: 140,
                 height: 42,
                 child: ElevatedButton(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFF4C3575),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4C3575),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  onPressed: saveProfile,
+                  child: const Text(
+                    "Save",
+                    style: TextStyle(fontSize: 16, color: Colors.white),
                   ),
                 ),
-                onPressed: () {},
-                child: const Text(
-                  "Save",
-                  style: TextStyle(fontSize: 16,color: Colors.white),
-                ),
               ),
-            ),
             ),
           ],
         ),
@@ -180,73 +321,103 @@ class _EditSalonProfilePageState extends State<EditSalonProfilePage> {
     );
   }
 
-  Widget _infoCard({
-    required String title1,
-    required String value1,
-    required String title2,
-    required String value2,
-    required String title3,
-    required String value3,
-  }) {
+  // ---------------- INFO CARD 1 ----------------
+  Widget _infoCard(ThemeData theme) {
+    final textColor = theme.textTheme.bodyMedium!.color;
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      width: double.infinity,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: Colors.grey.shade300,
-            width: 1,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.dividerColor),
+        boxShadow: [
+          BoxShadow(
+            color: theme.brightness == Brightness.dark
+                ? Colors.black26
+                : Colors.black12,
+            blurRadius: 8,
+            offset: const Offset(0, 4),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.12),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
+        ],
+      ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _infoItem(title1, value1),
+          _infoItem("Full Name", fullNameController, textColor, theme),
           const SizedBox(height: 12),
-          _infoItem(title2, value2),
+          _infoItem("Phone Number", phoneController, textColor, theme),
           const SizedBox(height: 12),
-          _infoItem(title3, value3),
+          _infoItem("Email Address", emailController, textColor, theme),
         ],
       ),
     );
   }
 
-  Widget _infoItem(String title, String value) {
-    TextEditingController controller = TextEditingController(text: value);
+  // ---------------- INFO CARD 2 ----------------
+  Widget _infoCard2(ThemeData theme) {
+    final textColor = theme.textTheme.bodyMedium!.color;
 
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: theme.cardColor,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: theme.dividerColor),
+        boxShadow: [
+          BoxShadow(
+            color: theme.brightness == Brightness.dark
+                ? Colors.black26
+                : Colors.black12,
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          _infoItem("Salon Name", salonNameController, textColor, theme),
+          const SizedBox(height: 12),
+          _infoItem("Salon Address", salonAddressController, textColor, theme),
+          const SizedBox(height: 12),
+          _infoItem("City, State, Country", cityStateController, textColor, theme),
+        ],
+      ),
+    );
+  }
+
+  // ---------------- FIELD ----------------
+  Widget _infoItem(
+      String title,
+      TextEditingController controller,
+      Color? textColor,
+      ThemeData theme,
+      ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
           title,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 15,
             fontWeight: FontWeight.w700,
+            color: textColor,
           ),
         ),
         const SizedBox(height: 6),
-
         TextFormField(
           controller: controller,
+          style: TextStyle(fontSize: 12, color: textColor),
           decoration: InputDecoration(
+            fillColor: theme.scaffoldBackgroundColor,
+            filled: true,
             contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             border: OutlineInputBorder(
               borderRadius: BorderRadius.circular(10),
             ),
             focusedBorder: OutlineInputBorder(
-              borderSide: BorderSide(color: Colors.grey.shade600, width: 1.5),
-              borderRadius: BorderRadius.circular(10),
+              borderSide: BorderSide(color: theme.colorScheme.primary),
             ),
           ),
-          style: const TextStyle(fontSize: 12),
         ),
       ],
     );

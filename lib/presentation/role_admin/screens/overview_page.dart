@@ -1,4 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+
 import 'pick_shop_location_page.dart';
 import '../../role_barber/screens/add_barbers_services_page.dart';
 import 'dashboard_page.dart';
@@ -11,19 +15,86 @@ class OverviewPage extends StatefulWidget {
 }
 
 class _OverviewPageState extends State<OverviewPage> {
-  DateTime? selectedMonthDate;
-  String selectedTab = "Today";
+  // Android Emulator requires 10.0.2.2 instead of localhost
+  static const String baseUrl = "http://10.0.2.2:8082/api/dashboard";
 
-  String getSummaryTitle() {
-    if (selectedTab == "Today") {
-      return "Today's Total";
-    } else if (selectedTab == "Yesterday") {
-      return "Yesterday's Total";
-    } else {
-      return "Month's Total";
+  bool _loading = true;
+  String? _error;
+
+  double total = 0.0;
+  int customers = 0;
+  int activeBarbers = 0;
+  List<Barber> barbers = [];
+
+  String selectedTab = "Today";
+  DateTime? selectedMonthDate;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchOverview();
+  }
+
+  // ---------------------- API CALL ------------------------
+  Future<void> _fetchOverview() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      String url;
+
+      if (selectedTab == "Today") {
+        url = "$baseUrl/overview/today?shopId=1";
+      } else if (selectedTab == "Yesterday") {
+        url = "$baseUrl/overview/yesterday?shopId=1";
+      } else {
+        if (selectedMonthDate == null) {
+          selectedMonthDate = DateTime.now();
+        }
+        final monthStr =
+            "${selectedMonthDate!.year}-${selectedMonthDate!.month.toString().padLeft(2, '0')}";
+        url = "$baseUrl/overview/month?shopId=1&date=$monthStr";
+      }
+
+      SharedPreferences prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString("token") ?? "";
+
+      final res = await http.get(
+        Uri.parse(url),
+        headers: {
+          "Authorization": "Bearer $token",
+          "Content-Type": "application/json",
+        },
+      );
+
+      if (res.statusCode != 200) {
+        throw Exception("Invalid status ${res.statusCode}");
+      }
+
+      final data = jsonDecode(res.body);
+
+      setState(() {
+        total = (data["totalRevenue"] ?? 0).toDouble();
+        customers = data["totalCustomers"] ?? 0;
+        activeBarbers = data["activeBarbers"] ?? 0;
+
+        barbers = (data["barbers"] as List)
+            .map((b) => Barber.fromJson(b))
+            .toList();
+
+        _loading = false;
+      });
+    } catch (e) {
+      setState(() {
+        _error = "Error loading overview: $e";
+        _loading = false;
+      });
     }
   }
 
+  // ---------------------- UI ------------------------
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -36,7 +107,6 @@ class _OverviewPageState extends State<OverviewPage> {
           elevation: 0,
           centerTitle: true,
           automaticallyImplyLeading: false,
-          toolbarHeight: 44,
           title: Row(
             children: [
               IconButton(
@@ -44,15 +114,14 @@ class _OverviewPageState extends State<OverviewPage> {
                     color: Colors.black, size: 18),
                 onPressed: () => Navigator.pop(context),
               ),
-              Expanded(
+              const Expanded(
                 child: Text(
                   "Daily Performance Overview",
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Colors.black,
                     fontWeight: FontWeight.w700,
                     fontSize: 22,
-                    height: 1.2,
                   ),
                 ),
               ),
@@ -62,31 +131,41 @@ class _OverviewPageState extends State<OverviewPage> {
         ),
       ),
 
-
-      // 🔹 Body
       body: SafeArea(
-        child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 0),
+        child: _loading
+            ? const Center(child: CircularProgressIndicator())
+            : _error != null
+            ? Center(
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              // Subtitle
-          const Padding(
-          padding: EdgeInsets.only(top: 0),
-          child: Text(
-            "Quick view of your salon's daily\nperformance",
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.black,
-              fontSize: 16,
-              height: 1.2,
-                ),
+              Text(_error!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.red)),
+              const SizedBox(height: 12),
+              ElevatedButton(
+                  onPressed: _fetchOverview,
+                  child: const Text("Retry")),
+            ],
+          ),
+        )
+            : SingleChildScrollView(
+          physics: const BouncingScrollPhysics(),
+          padding:
+          const EdgeInsets.symmetric(horizontal: 24, vertical: 0),
+          child: Column(
+            children: [
+              const SizedBox(height: 10),
+              const Text(
+                "Quick view of your salon's daily\nperformance",
+                textAlign: TextAlign.center,
+                style:
+                TextStyle(fontSize: 16, color: Colors.black87),
               ),
-            ),
+
               const SizedBox(height: 22),
 
-              // 🔹 Tabs (pill-shaped, OG-aligned)
+              // Tabs
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -98,46 +177,70 @@ class _OverviewPageState extends State<OverviewPage> {
 
               const SizedBox(height: 50),
 
-              // 🔹 Summary Cards Row
+              // Summary Cards
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  _buildSummaryCard(getSummaryTitle(), "R\$1,000"),
-                  _buildSummaryCard("Total Customers", "20"),
-                  _buildSummaryCard("Active Barbers", "3"),
+                  _buildSummaryCard(
+                      getSummaryTitle(), "Rs${total.toInt()}"),
+                  _buildSummaryCard(
+                      "Total Customers", customers.toString()),
+                  _buildSummaryCard(
+                      "Active Barbers", activeBarbers.toString()),
                 ],
               ),
 
-              const SizedBox(height: 55), // ✅ Space between summary cards & barber list card (OG exact)
+              const SizedBox(height: 55),
 
-              // 🔹 Barbers Performance Card
+              // -------- Barber List (FIXED) --------
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(14), // ✅ OG roundness
-                  border: Border.all(color: const Color(0xFFE0E0E0)),
+                  borderRadius: BorderRadius.circular(14),
+                  border:
+                  Border.all(color: const Color(0xFFE0E0E0)),
                 ),
                 child: Column(
-                  children: [
-                    _buildBarberTile("Aman", "Rs700 · 7 services", "assets/images/barber1.png"),
-                    _divider(),
-                    _buildBarberTile("Salman", "Rs450 · 2 services", "assets/images/barber2.png"),
-                    _divider(),
-                    _buildBarberTile("Aadil", "Rs450 · 2 services", "assets/images/barber3.png"),
-                  ],
+                  children: barbers.isEmpty
+                      ? [
+                    const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: Text(
+                        "No barbers found",
+                        style: TextStyle(
+                            color: Colors.black54,
+                            fontSize: 14),
+                      ),
+                    )
+                  ]
+                      : List.generate(barbers.length * 2 - 1, (i) {
+                    if (i.isOdd) return _divider();
+                    final index = i ~/ 2;
+                    final b = barbers[index];
+
+                    return _buildBarberTile(
+                      b.name,
+                      "Rs${b.earnings} · ${b.serviceCount} services",
+                      (b.photoUrl != null &&
+                          b.photoUrl!.isNotEmpty)
+                          ? b.photoUrl
+                          : null,
+                    );
+                  }),
                 ),
               ),
+
+              const SizedBox(height: 24),
             ],
           ),
         ),
       ),
 
-      // 🔹 Bottom Navigation Bar
+      // Bottom Navigation
       bottomNavigationBar: BottomNavigationBar(
-        backgroundColor: Colors.white,
-        currentIndex: 0, // assuming location (Overview) page index is 2
+        currentIndex: 0,
         selectedItemColor: const Color(0xFF363062),
         unselectedItemColor: Colors.black54,
         showSelectedLabels: false,
@@ -145,91 +248,78 @@ class _OverviewPageState extends State<OverviewPage> {
         type: BottomNavigationBarType.fixed,
         onTap: (index) {
           if (index == 0) {
-            // 🏠 Navigate to DashboardPage
             Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const DashboardPage()),
-            );
+                context,
+                MaterialPageRoute(
+                    builder: (context) => const DashboardPage()));
           } else if (index == 1) {
-            // ➕ Navigate to AddBarbersServicesPage
             Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const AddBarbersServicesPage()),
-            );
+                context,
+                MaterialPageRoute(
+                    builder: (context) => const AddBarbersServicesPage()));
           } else if (index == 2) {
             Navigator.pushReplacement(
-              context,
-              MaterialPageRoute(builder: (context) => const PickShopLocationPage()),
-            );
-          } else if (index == 3) {
-            // ⚙️ Settings placeholder
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text("Settings tapped")),
-            );
+                context,
+                MaterialPageRoute(
+                    builder: (context) => const PickShopLocationPage()));
           }
         },
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home_filled), label: ""),
-          BottomNavigationBarItem(icon: Icon(Icons.add_box_outlined), label: ''),
-          BottomNavigationBarItem(icon: Icon(Icons.location_on_rounded), label: ''),
-          BottomNavigationBarItem(icon: Icon(Icons.settings_rounded), label: ""),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.home_filled), label: ""),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.add_box_outlined), label: ""),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.location_on_rounded), label: ""),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.settings_rounded), label: ""),
         ],
       ),
-
     );
   }
 
-  // 🔹 Pill-shaped Tab Button (OG accurate)
+  // ---------------------- WIDGETS ------------------------
+
   Widget _buildTabButton(String label) {
-    final bool isSelected = label == selectedTab;
+    final isSelected = (label == selectedTab);
 
     return GestureDetector(
       onTap: () async {
+        setState(() => selectedTab = label);
+
         if (label == "Month") {
-          // OPEN DATE PICKER 📅
-          DateTime? picked = await showDatePicker(
+          selectedMonthDate = await showDatePicker(
             context: context,
             initialDate: DateTime.now(),
             firstDate: DateTime(2000),
             lastDate: DateTime(2100),
           );
-
-          // user selects OR cancels — still show Month tab
-          setState(() {
-            selectedTab = "Month";
-            selectedMonthDate = picked; // optional data storage
-          });
-        } else {
-          // TODAY or YESTERDAY
-          setState(() {
-            selectedTab = label;
-          });
         }
-      },
 
+        _fetchOverview();
+      },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         height: 38,
         width: 100,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF34A853) : const Color(0xFFEAEAEA),
+          color: isSelected
+              ? const Color(0xFF34A853)
+              : const Color(0xFFEAEAEA),
           borderRadius: BorderRadius.circular(25),
         ),
         child: Text(
           label,
           style: TextStyle(
-            color: isSelected ? Colors.white : Colors.black87,
-            fontWeight: FontWeight.w600,
-            fontSize: 13.5,
-          ),
+              color: isSelected ? Colors.white : Colors.black87,
+              fontWeight: FontWeight.w600,
+              fontSize: 13.5),
         ),
       ),
     );
   }
 
-
-  // 🔹 Summary Card
   Widget _buildSummaryCard(String title, String value) {
     return Expanded(
       child: Container(
@@ -242,59 +332,48 @@ class _OverviewPageState extends State<OverviewPage> {
         ),
         child: Column(
           children: [
-            Text(
-              title,
-              style: const TextStyle(
-                fontSize: 12.5,
-                color: Colors.black54,
-              ),
-              textAlign: TextAlign.center,
-            ),
+            Text(title,
+                textAlign: TextAlign.center,
+                style:
+                const TextStyle(fontSize: 12.5, color: Colors.black54)),
             const SizedBox(height: 5),
-            Text(
-              value,
-              style: const TextStyle(
-                fontSize: 16.5,
-                fontWeight: FontWeight.w700,
-                color: Colors.black,
-              ),
-            ),
+            Text(value,
+                style: const TextStyle(
+                    fontSize: 16.5,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.black)),
           ],
         ),
       ),
     );
   }
 
-  // 🔹 Barber Tile
-  Widget _buildBarberTile(String name, String detail, String imagePath) {
+  Widget _buildBarberTile(String name, String detail, String? imageUrl) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8),
       child: Row(
         children: [
           CircleAvatar(
             radius: 24,
-            backgroundImage: AssetImage(imagePath),
+            backgroundImage: NetworkImage(
+              imageUrl != null && imageUrl.isNotEmpty
+                  ? imageUrl
+                  : "http://10.0.2.2:8082/images/default_barber.png",
+            ),
           ),
           const SizedBox(width: 14),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                name,
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: Colors.black,
-                ),
-              ),
+              Text(name,
+                  style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.black)),
               const SizedBox(height: 3),
-              Text(
-                detail,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: Colors.black54,
-                ),
-              ),
+              Text(detail,
+                  style: const TextStyle(
+                      fontSize: 13, color: Colors.black54)),
             ],
           ),
         ],
@@ -302,15 +381,40 @@ class _OverviewPageState extends State<OverviewPage> {
     );
   }
 
-  // 🔹 Divider (exact OG)
-  Widget _divider() {
-    return const Padding(
-      padding: EdgeInsets.symmetric(vertical: 8),
-      child: Divider(
-        height: 1,
-        thickness: 0.8,
-        color: Color(0xFFDADADA), // ✅ soft OG line
-      ),
-    );
+
+  Widget _divider() =>
+      const Divider(height: 1, thickness: 0.8, color: Color(0xFFDADADA));
+
+  String getSummaryTitle() {
+    switch (selectedTab) {
+      case "Today":
+        return "Today's Total";
+      case "Yesterday":
+        return "Yesterday's Total";
+      default:
+        return "Month's Total";
+    }
   }
+}
+
+// ---------------------- MODEL ------------------------
+class Barber {
+  final String name;
+  final double earnings;
+  final int serviceCount;
+  final String? photoUrl;
+
+  Barber({
+    required this.name,
+    required this.earnings,
+    required this.serviceCount,
+    this.photoUrl,
+  });
+
+  factory Barber.fromJson(Map<String, dynamic> json) => Barber(
+    name: json["name"] ?? "",
+    earnings: (json["earnings"] ?? 0).toDouble(),
+    serviceCount: json["serviceCount"] ?? 0,
+    photoUrl: json["photoUrl"],
+  );
 }
